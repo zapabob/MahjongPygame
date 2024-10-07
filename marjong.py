@@ -290,7 +290,7 @@ def is_kokushi_musou(hand, winning_tile):
 
 def is_riichi(player, winning_tile):
     # リーチの判定ロジックを実装
-    return player.ready and player.hand.count(winning_tile) == 1
+    return player.ready and winning_tile in player.hand
 
 def is_dora(hand, dora_tiles):
     # ドラの判定ロジックを実装
@@ -357,6 +357,8 @@ def is_shousushi(hand, winning_tile):
     wind_tiles = ['東', '南', '西', '北']
     wind_counts = [hand.count(tile) for tile in wind_tiles]
     return sum(count >= 3 for count in wind_counts) == 3 and any(count >= 2 for count in wind_counts)
+def is_daisangen(hand, winning_tile):
+    return all(tile in ['白', '發', '中'] and count == 3 for tile, count in Counter(str(tile) for tile in hand).items())
 
 def get_next_dora(tile):
     if tile.suit in SUITS:
@@ -449,7 +451,7 @@ def calculate_fu(hand, winning_tile, yaku_list, tsumo=False):
 def is_open(meld, hand):
     # メルドが開かれているか（他家からの切り牌で完成しているか）を判定
     # 他家からの切り牌が含まれている場合はTrueを返す
-    return any(tile in hand for tile in meld) and len(meld) == 3 and meld[0] != meld[1] and meld[1] != meld[2]
+    return len(meld) == 3 and any(tile in hand for tile in meld) and meld[0] != meld[1] and meld[1] != meld[2]
 
 def calculate_score(yaku_list, fu, dealer=False, tsumo=False):
     total_han = sum(yaku.han for yaku in yaku_list)
@@ -553,7 +555,9 @@ class MahjongGUI(QMainWindow):
     def tile_clicked(self, tile):
         # タイルがクリックされたときの処理
         print(f"{tile} がクリックされました")
-        # ここで適切な処理を行う（例：捨て牌の選択）
+        # クリックされたタイルを捨て牌として選択する処理を追加
+        self.game.discard_pile.append(tile)  # タイルを捨て牌に追加
+        self.update_display()  # 表示を更新
 
 def is_special_wait(hand, winning_tile):
     # 特定の待ちの判定ロジックを実装
@@ -563,15 +567,9 @@ def is_special_wait(hand, winning_tile):
         return True  # 同じ牌が揃っている場合は特定の待ち
     if len(counts) == 2 and any(count == 2 for count in counts.values()):
         return True  # 2種類の牌があり、1つが対子の場合
+    if len(counts) == 2 and any(count == 1 for count in counts.values()):
+        return True  # 2種類の牌があり、1つが単独の場合
     return False  # 特定の待ちではない
-
-def is_daisangen(hand, winning_tile):
-    dragons = ['白', '發', '中']
-    return all(hand.count(dragon) >= 3 for dragon in dragons)
-
-# 大三元
-if is_daisangen(hand, winning_tile):
-    yaku_list.append(Yaku("大三元", 13, "全ての牌が大三元"))
 
 # Playerクラスを定義
 class Player:
@@ -582,17 +580,42 @@ class Player:
 class Game:
     def __init__(self, players):
         self.players = players
+        self.central_widget.setLayout(self.layout)
+        self.game = Game([Player(f"プレイヤー{i+1}") for i in range(4)])
+        self.initUI()
 
-# 既存のコード
-self.central_widget.setLayout(self.layout)
-self.game = Game([Player(f"プレイヤー{i+1}") for i in range(4)])
-self.initUI()
+class MahjongAI:
+    def __init__(self):
+        self.dangerous_tiles = set()
+        self.safe_tiles = set()
+        
+    def update_dangerous_tiles(self, game_state):
+        # ゲームの状態から危険な牌を更新
+        self.dangerous_tiles.clear()  # 既存の危険な牌をクリア
+        for player in game_state.players:
+            if player.is_ready:  # リーチ宣言をしているプレイヤー
+                self.dangerous_tiles.add(player.winning_tile)  # 勝ち牌を危険な牌として追加
+            # 鳴きの情報を使用して危険な牌を追加
+            for meld in player.melds:
+                self.dangerous_tiles.update(meld.tiles)  # 鳴き牌を危険な牌として追加
+    def is_safe_to_discard(self, tile):
+        return tile not in self.dangerous_tiles  # 単純化された安全な牌の判定
+        
+    def should_play_defensive(self, game_state):
+        # 場況に応じて守りに入るべきかを判断
+        return any(player.is_ready for player in game_state.players)  # リーチしているプレイヤーがいる場合は守りに入る
+    def choose_discard_tile(self, hand, game_state):
+        if self.should_play_defensive(game_state):
+            # 安全な牌を優先して切る
+            for tile in hand:
+                if self.is_safe_to_discard(tile):
+                    return tile
+        
+        # 通常の切り牌選択ロジック
+        return self.normal_discard_strategy(hand)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = MahjongGUI()
     window.show()
-    sys.exit(app.exec_())
-    sys.exit(app.exec_())
-    sys.exit(app.exec_())
     sys.exit(app.exec_())
